@@ -1,25 +1,210 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
+author: "John Southgate"
+date: "12th January 2017"
 output: 
   html_document:
     keep_md: true
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Investigate data from a personal activity monitoring device
+
+## Setup
+```{r}
+library(dplyr)
+```
+
+```{r echo=FALSE}
+setwd("C:/Users/go2/_my/CourseraDataSci/RepData_PeerAssessment1")
+#getwd()
+#dir()
+```
 
 ## Loading and preprocessing the data
+```{r}
+activity <- read.csv("activity.csv", colClasses = "character")
+str(activity)
+head(activity)
+summary(activity$steps)
+table(activity$steps)
+### NB: 11014 inactive intervals - no steps
+```
 
-
+## Pre-process the table for the correct formats
+```{r}
+activity$nsteps<-as.numeric(activity$steps)
+activity$Date<-as.Date(activity$date)
+activity$Interval<-as.numeric(activity$interval)
+```
 
 ## What is mean total number of steps taken per day?
+### Calculate the total number of steps taken per day
+Ignoring days with no data
+```{r}
+daily.total<-aggregate(nsteps ~ Date, sum, data=activity,na.rm=TRUE)
+head(daily.total)
+```
+check
+```{r}
+daily.steps<-split(activity$nsteps, activity$Date)
+head(daily.steps)
+```
 
+### Make a histogram of the total number of steps taken each day
+include inactive intervals
+```{r}
+plot(daily.total$Date,daily.total$nsteps,type="h", main="Total steps taken each day")
+```
 
+## Calculate and report the mean and median of the steps taken per day
+mean: include inactive intervals
+```{r}
+daily.mean<-aggregate(nsteps ~ Date, mean, data=activity,na.rm=TRUE)
+head(daily.mean)
+```
+
+median: include inactive intervals
+```{r}
+daily.median<-aggregate(nsteps ~ Date, median, data=activity,na.rm=TRUE)
+head(daily.median)
+```
 
 ## What is the average daily activity pattern?
+### Calculate average number of steps taken, averaged across all days (y-axis)
+```{r}
+interval.mean<-aggregate(nsteps ~ Interval, mean, data=activity,na.rm=TRUE)
+head(interval.mean)
+plot(interval.mean$Interval,interval.mean$nsteps,type="l", main="Mean steps across all days")
+```
 
-
+## Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+Now use the dplyr objects (tibble) and functions 
+```{r}
+df<-tbl_df(activity)
+#class(df)
+Intervals<-group_by(df, Interval)
+#Intervals %>% print(n = nrow(.))
+Intervals.max.steps <- summarize(Intervals, max.steps = max(nsteps, na.rm=T))
+#Intervals.max.steps %>% print(n = nrow(.))
+Interval.max<-arrange(Intervals.max.steps, desc(max.steps))[1,]$Interval
+#Interval.max
+print (paste("Maximum steps occurs in the",Interval.max,"minute interval"))
+```
 
 ## Imputing missing values
 
+### Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+```{r}
+activity.cases<-complete.cases(activity) 
+ac<-activity[activity.cases,]
+print(paste((nrow(activity)-nrow(ac)),"missing rows"))
+```
 
+### Devise a strategy for filling in all of the missing values in the dataset. 
+Just take the mean of steps for interval across all days and apply it to each interval with missing values 
+```{r}
+Intervals.mean.steps <- round(summarize(Intervals, mean.steps = mean(nsteps, na.rm=T)))
+#Intervals.mean.steps %>% print(n = nrow(.))
+#nrow(Intervals.mean.steps)
+```
 
-## Are there differences in activity patterns between weekdays and weekends?
+### Create a new dataset that is equal to the original dataset but with the missing data filled in
+```{r}
+activity2<-activity
+
+for (i in 1:nrow(activity)) 
+{
+	if (is.na(activity$nsteps[i])) 
+	{activity2$nsteps[i] <- Intervals.mean.steps[(Intervals.mean.steps$Interval==activity$Interval[i]),]$mean.steps
+	}
+	else
+	{activity2$nsteps[i] <- activity$nsteps[i]
+	}
+	activity2$steps[i] <- as.character(activity2$nsteps[i])
+	}
+head(activity2,20)
+head(Intervals.mean.steps,20)
+```
+
+### Calculate the total number of steps taken per day
+```{r}
+daily2.total<-aggregate(nsteps ~ Date, sum, data=activity2,na.rm=TRUE)
+head(daily2.total)
+```
+check
+```{r}
+daily2.steps<-split(activity2$nsteps, activity2$Date)
+head(daily2.steps)
+```
+
+### Make a histogram of the total number of steps taken each day
+include inactive intervals
+```{r}
+plot(daily2.total$Date,daily2.total$nsteps,type="h", main="Total steps for each day, with imputed values")
+```
+
+## Calculate and report the mean and median of the steps taken per day
+mean: include inactive intervals
+```{r}
+daily2.mean<-aggregate(nsteps ~ Date, mean, data=activity2,na.rm=TRUE)
+```
+
+median: include inactive intervals
+```{r}
+daily2.median<-aggregate(nsteps ~ Date, median, data=activity2,na.rm=TRUE)
+head(daily.mean)
+head(daily2.mean)
+head(daily.median)
+head(daily2.median)
+
+par(mfrow=c(2,1))
+plot(daily.total$Date,daily.total$nsteps,type="h", main="Total steps taken each day with missing values")
+lines(daily.total$Date,daily.total$nsteps,type="l", col="blue", lwd=2)
+plot(daily2.total$Date,daily2.total$nsteps,type="h", main = "Total steps taken each day, no missing values")
+lines(daily2.total$Date,daily2.total$nsteps,type="l", col="blue", lwd=2)
+```
+
+### Do these values differ? What is the impact ?
+These values differ. Missing histogram bars are filled in because more dates have values. Smoothing the histogram makes significant trends easier to spot. 
+
+### Plot of the 5-minute interval and the average number of steps taken, averaged across all weekday days or weekend days 
+
+Populate daytype
+```{r}
+activity2["daytype"]<-NA
+for (i in 1:nrow(activity2)) {
+if (weekdays(activity2$Date[i])  %in%  c("Saturday","Sunday"))
+   {activity2$daytype[i]<-"weekend"}
+else
+   {activity2$daytype[i]<-"weekday"}
+}
+
+#unique(activity2$daytype)
+```
+
+Filter and plot by daytype
+```{r}
+par(mfrow=c(1,1))
+df_weekday=filter(activity2, daytype == "weekday")
+df_weekend=filter(activity2, daytype == "weekend")
+
+interval2.mean.wd<-aggregate(nsteps ~ Interval, mean, data=df_weekday,na.rm=TRUE)
+interval2.mean.wd2<-mean(df_weekday$nsteps)
+head(interval2.mean.wd)
+plot(interval2.mean.wd$Interval,interval2.mean.wd$nsteps,type="l",col="red", lwd=1, main="Comparison of Steps: Weekdays and Weekends")
+
+interval2.mean.we<-aggregate(nsteps ~ Interval, mean, data=df_weekend,na.rm=TRUE)
+interval2.mean.we2<-mean(df_weekend$nsteps)
+head(interval2.mean.we)
+lines(interval2.mean.we$Interval,interval2.mean.we$nsteps,type="l",col="blue", lwd=1)
+
+abline(h=interval2.mean.wd2,lty=2,col="red")
+abline(h=interval2.mean.we2,lty=2,col="blue")
+legend("topright",lty=1, col=c("red","blue"),c("weekdays","weekends"))
+```
+
+Greater number of steps are observed on weekdays in the lower 5 minute intervals. From about the 900 minute interval, greater steps are observed on weekends. As can be seen by the dashed lines, more steps are taken on average on weekends.
